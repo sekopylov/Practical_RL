@@ -1,4 +1,5 @@
 from collections import defaultdict
+from collections import deque
 
 import numpy as np
 
@@ -9,6 +10,8 @@ class EnvRunner:
     def __init__(self, env, policy, nsteps, transforms=None, step_var=None):
         self.env = env
         self.policy = policy
+        self.sessions_reward = deque(maxlen=100)
+        self.current_reward_sum = []
         self.nsteps = nsteps
         self.transforms = transforms or []
         self.step_var = step_var if step_var is not None else 0
@@ -18,6 +21,9 @@ class EnvRunner:
     def nenvs(self):
         """Returns number of batched envs or `None` if env is not batched"""
         return getattr(self.env.unwrapped, "nenvs", None)
+
+    def get_mean_sessions_reward(self):
+        return np.mean(self.sessions_reward)
 
     def reset(self, **kwargs):
         """Resets env and runner states."""
@@ -51,9 +57,19 @@ class EnvRunner:
             obs, rew, terminated, truncated, _ = self.env.step(
                 trajectory["actions"][-1]
             )
+            if len(self.current_reward_sum) == 0:
+                self.current_reward_sum = rew
+            else:
+                self.current_reward_sum += rew
+            reset = np.logical_or(terminated, truncated)
+
+            reset_ids = np.where(reset == 1)[0]
+            for id in reset_ids:
+                self.sessions_reward.append(self.current_reward_sum[id])
+                self.current_reward_sum[id] = 0
+
             self.state["latest_observation"] = obs
             rewards.append(rew)
-            reset = np.logical_or(terminated, truncated)
             resets.append(reset)
             self.step_var += self.nenvs or 1
 

@@ -1,0 +1,42 @@
+{
+  "os": "Linux-6.11.0-25-generic-x86_64-with-glibc2.39",
+  "python": "CPython 3.11.11",
+  "startedAt": "2025-05-11T07:27:31.376305Z",
+  "program": "/home/sergei/study/rl/Practical_RL/week06_policy_based/a2c-optional.ipynb",
+  "codePath": "week06_policy_based/a2c-optional.ipynb",
+  "git": {
+    "remote": "https://github.com/sekopylov/Practical_RL.git",
+    "commit": "39a5ba8d2ccf919f54720f61bcc0832a0bd1cb12"
+  },
+  "email": "jegvide@gmail.com",
+  "root": "/home/sergei/study/rl/Practical_RL/week06_policy_based",
+  "host": "sergei-computer",
+  "executable": "/home/sergei/study/rl/.conda/bin/python",
+  "codePathLocal": "a2c-optional.ipynb",
+  "cpu_count": 12,
+  "cpu_count_logical": 24,
+  "gpu": "NVIDIA GeForce GTX 1060 6GB",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "241753260032",
+      "used": "197687705600"
+    }
+  },
+  "memory": {
+    "total": "33588801536"
+  },
+  "cpu": {
+    "count": 12,
+    "countLogical": 24
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA GeForce GTX 1060 6GB",
+      "memoryTotal": "6442450944",
+      "cudaCores": 1280,
+      "architecture": "Pascal"
+    }
+  ],
+  "cudaVersion": "12.6"
+}

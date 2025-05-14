@@ -18,7 +18,7 @@ class BasicTranslationModel(nn.Module):
         self.emb_out = nn.Embedding(len(out_voc), emb_size)
         self.enc0 = nn.GRU(emb_size, hid_size, batch_first=True)
         self.dec_start = nn.Linear(hid_size, hid_size)
-        self.dec0 = nn.GRUCell(emb_size, hid_size)
+        self.dec0 = nn.GRUCell(emb_size, hid_size)  # do one step, take hidden state and input
         self.logits = nn.Linear(hid_size, len(out_voc))
 
     def encode(self, inp, **flags):
@@ -27,15 +27,18 @@ class BasicTranslationModel(nn.Module):
         :param inp: input tokens, int64 vector of shape [batch]
         :return: a list of initial decoder state tensors
         """
-        inp_emb = self.emb_inp(inp)
-        enc_seq, _ = self.enc0(inp_emb)
+        # inp.shape = [B, T]
+        inp_emb = self.emb_inp(inp)      # [B, T_in, E]
+        enc_seq, _ = self.enc0(inp_emb)  # [B, T_in, H]
 
         # select last element w.r.t. mask
         end_index = infer_length(inp, self.inp_voc.eos_ix)
         end_index[end_index >= inp.shape[1]] = inp.shape[1] - 1
-        enc_last = enc_seq[range(0, enc_seq.shape[0]), end_index.detach(), :]
 
-        dec_start = self.dec_start(enc_last)
+        # Gather last relevant hidden state for each sample
+        enc_last = enc_seq[range(0, enc_seq.shape[0]), end_index.detach(), :]  # [B, H]
+
+        dec_start = self.dec_start(enc_last)  # [B, H]
         return [dec_start]
 
     def decode(self, prev_state, prev_tokens, **flags):
@@ -45,8 +48,9 @@ class BasicTranslationModel(nn.Module):
         :param prev_tokens: previous output tokens, an int vector of [batch_size]
         :return: a list of next decoder state tensors, a tensor of logits [batch,n_tokens]
         """
-        [prev_dec] = prev_state
+        [prev_dec] = prev_state  # previous hidden: [B, H]
 
+        # prev_tokens = [B, E]
         prev_emb = self.emb_out(prev_tokens)
         new_dec_state = self.dec0(prev_emb, prev_dec)
         output_logits = self.logits(new_dec_state)
@@ -59,7 +63,7 @@ class BasicTranslationModel(nn.Module):
         Computes the log-probabilities of all possible english characters given english prefices and hebrew word.
         :param inp: input sequence, int32 matrix of shape [batch,time]
         :param out: output sequence, int32 matrix of shape [batch,time]
-        :return: log-probabilities of all possible english characters of shape [bath,time,n_tokens]
+        :return: log-probabilities of all possible english characters of shape [batch,time,n_tokens]
 
         Note: log-probabilities time axis is synchronized with out
         In other words, logp are probabilities of __current__ output at each tick, not the next one
@@ -73,12 +77,15 @@ class BasicTranslationModel(nn.Module):
             device=device,
         )
         logits_seq = [torch.log(to_one_hot(bos, len(self.out_voc)) + eps)]
+        # logits_seq[0] <-- [batch_size, n_tokens]
 
         hid_state = self.encode(inp, **flags)
         for x_t in out.transpose(0, 1)[:-1]:
             hid_state, logits = self.decode(hid_state, x_t, **flags)
             logits_seq.append(logits)
 
+        # torch.stack(logits_seq, dim=1) <-- [B, T_out, V]
+        # V = n tokens
         return F.log_softmax(torch.stack(logits_seq, dim=1), dim=-1)
 
     def translate(self, inp, greedy=False, max_len=None, eps=1e-30, **flags):
@@ -100,11 +107,16 @@ class BasicTranslationModel(nn.Module):
             device=device,
         )
         mask = torch.ones(batch_size, dtype=torch.uint8, device=device)
+        
         logits_seq = [torch.log(to_one_hot(bos, len(self.out_voc)) + eps)]
+        # we need this layer, because without it
+        # next word which this layer predicts will be relatively shifted by 1
+        # By adding this layer we will level that shift
+        
         out_seq = [bos]
 
         hid_state = self.encode(inp, **flags)
-        while True:
+        while True:  # auto-regressive inference
             hid_state, logits = self.decode(hid_state, out_seq[-1], **flags)
             if greedy:
                 _, y_t = torch.max(logits, dim=-1)
@@ -122,8 +134,8 @@ class BasicTranslationModel(nn.Module):
                 break
 
         return (
-            torch.stack(out_seq, 1),
-            F.log_softmax(torch.stack(logits_seq, 1), dim=-1),
+            torch.stack(out_seq, 1),  # [B, T_gen] 
+            F.log_softmax(torch.stack(logits_seq, 1), dim=-1),  # [B, T_gen, V]
         )
 
 
@@ -137,7 +149,7 @@ def infer_mask(
         dtype=torch.float):
     """
     compute mask given output indices and eos code
-    :param seq: tf matrix [time,batch] if batch_first else [batch,time]
+    :param seq: tf matrix [batch,time] if batch_first else [time,batch]
     :param eos_ix: integer index of end-of-sentence token
     :param include_eos: if True, the time-step where eos first occurs is has mask = 1
     :returns: mask, float32 matrix with '0's and '1's of same shape as seq

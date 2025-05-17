@@ -2,7 +2,7 @@ import numpy as np
 
 
 class Vocab:
-    def __init__(self, tokens, bos="__BOS__", eos="__EOS__", sep=''):
+    def __init__(self, tokens, bos="__BOS__", eos="__EOS__", pad="__PAD__", sep=''):
         """
         A special class that handles tokenizing and detokenizing
         """
@@ -12,6 +12,8 @@ class Vocab:
 
         self.bos = bos
         self.bos_ix = self.token_to_ix[bos]
+        self.pad = pad
+        self.pad_ix = self.token_to_ix[pad]
         self.eos = eos
         self.eos_ix = self.token_to_ix[eos]
         self.sep = sep
@@ -20,13 +22,13 @@ class Vocab:
         return len(self.tokens)
 
     @staticmethod
-    def from_lines(lines, bos="__BOS__", eos="__EOS__", sep=''):
+    def from_lines(lines, bos="__BOS__", eos="__EOS__", pad="__PAD__", sep=''):
         flat_lines = sep.join(list(lines))
         flat_lines = list(flat_lines.split(sep)) if sep else list(flat_lines)
         tokens = sorted(set(sep.join(flat_lines)))
-        tokens = [t for t in tokens if t not in (bos, eos) and len(t) != 0]
-        tokens = [bos, eos] + tokens
-        return Vocab(tokens, bos, eos, sep)
+        tokens = [t for t in tokens if t not in (bos, eos, pad) and len(t) != 0]
+        tokens = [bos, eos, pad] + tokens
+        return Vocab(tokens, bos, eos, pad, sep)
 
     def tokenize(self, string):
         """converts string to a list of tokens"""
@@ -43,14 +45,13 @@ class Vocab:
          [30 21 15 15 21 14 28 27 13 -1 -1]
          [25 37 31 34 21 20 37 21 28 19 13]]
         """
-        max_len = max_len or max(map(len, lines)) + 2  # 2 for bos and eos
+        max_len = max_len or max(map(len, lines)) + 2  # 2 for bos, eos
 
-        matrix = np.zeros((len(lines), max_len), dtype='int32') + self.eos_ix
+        matrix = np.zeros((len(lines), max_len), dtype='int32') + self.pad_ix
         for i, seq in enumerate(lines):
             tokens = self.tokenize(seq)
             row_ix = list(map(self.token_to_ix.get, tokens))[:max_len]
             matrix[i, :len(row_ix)] = row_ix
-
         return matrix
 
     def to_lines(self, matrix, crop=True):

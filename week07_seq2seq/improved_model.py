@@ -10,13 +10,14 @@ class Encoder(nn.Module):
     def __init__(self, inp_voc, emb_size, hid_size):
         super().__init__()
         self.inp_voc = inp_voc
-        self.emb_inp = nn.Embedding(len(inp_voc), emb_size)
+        self.hid_size = hid_size
+        self.emb_inp = nn.Embedding(len(inp_voc), emb_size, padding_idx=self.inp_voc.pad_ix)
         self.bi_gru = nn.GRU(emb_size, hid_size, batch_first=True, bidirectional=True)
         self.uni_gru = nn.GRU(hid_size, hid_size, batch_first=True, bidirectional=False)
         self.dec_start_l1 = nn.Linear(2 * hid_size, hid_size)
         self.dec_out_l1 = nn.Linear(2 * hid_size, hid_size)
         self.dec_start_l2 = nn.Linear(hid_size, hid_size)
-
+    
     def forward(self, inp):
         """
         Takes symbolic input sequence, computes initial state for decoder
@@ -25,11 +26,15 @@ class Encoder(nn.Module):
         end_index[end_index >= inp.shape[1]] = inp.shape[1] - 1
         inp_emb = self.emb_inp(inp)
         
-        enc_seq1, _ = self.bi_gru(inp_emb)  # [B, T, 2 * H]
+        enc_seq1, h_final = self.bi_gru(inp_emb)  # enc_seq1.shape: [B, T, 2 * H]
+        enc_seq1_2dir = enc_seq1.view(enc_seq1.shape[0], enc_seq1.shape[1], 2, self.hid_size)  # [B, T, 2, H]
+        enc_last_backward = h_final[1, :, :]
         enc_seq_out1 = self.dec_out_l1(enc_seq1)
-        enc_last1 = enc_seq1[range(0, enc_seq1.shape[0]), end_index.detach(), :]  # [B, 2 * H]
-        dec_start1 = self.dec_start_l1(enc_last1)  # [B, H]
-        
+
+        enc_last = enc_seq1_2dir[range(0, enc_seq1.shape[0]), end_index.detach(), :, :]  # [B, 2,  H]
+        enc_last_forward = enc_last[:, 0, :]  # [B, H]
+
+        dec_start1 = self.dec_start_l1(torch.cat((enc_last_forward, enc_last_backward), dim=-1))  # [B, H]
 
         enc_seq2, _ = self.uni_gru(enc_seq_out1)
         enc_last2 = enc_seq2[range(0, enc_seq2.shape[0]), end_index.detach(), :]  # [B, H]
@@ -47,7 +52,7 @@ class DecoderCell(nn.Module):
         self.dec_out_l1 = nn.Linear(hid_size, hid_size)
 
         self.logits_l = nn.Linear(hid_size, len(out_voc))
-        self.emb_out = nn.Embedding(len(out_voc), emb_size)
+        self.emb_out = nn.Embedding(len(out_voc), emb_size, padding_idx=self.out_voc.pad_ix)
 
     def forward(self, prev_state, prev_tokens):
         """
@@ -106,6 +111,8 @@ class TranslationModel(nn.Module):
         therefore you can get likelihood as logprobas * tf.one_hot(out,n_tokens)
         """
         device = next(self.parameters()).device
+        inp = inp.to(device)
+        out = out.to(device)
         batch_size = inp.shape[0]
         bos = torch.tensor(
             [self.out_voc.bos_ix] * batch_size,
@@ -136,6 +143,7 @@ class TranslationModel(nn.Module):
                  log-probabilities of all tokens at each tick, [batch,time,n_tokens]
         """
         device = next(self.parameters()).device
+        inp = inp.to(device)
         batch_size = inp.shape[0]
         bos = torch.tensor(
             [self.out_voc.bos_ix] * batch_size,
@@ -144,6 +152,7 @@ class TranslationModel(nn.Module):
         )
         mask = torch.ones(batch_size, dtype=torch.uint8, device=device)
         
+
         logits_seq = [torch.log(to_one_hot(bos, len(self.out_voc)) + eps)]
         # we need this layer, because without it
         # next word which this layer predicts will be relatively shifted by 1
